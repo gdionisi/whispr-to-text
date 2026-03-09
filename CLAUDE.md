@@ -4,7 +4,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Project Overview
 
-Whispr is a macOS-only local speech-to-text dictation tool. It runs as a menu bar app (no Dock icon), listens for a global hotkey (F5), records audio from the microphone, transcribes it locally using Whisper via whisper.cpp, and pastes the result into the focused application.
+Whispr is a macOS-only local speech-to-text dictation tool. It runs as a menu bar app (no Dock icon), listens for a configurable global hotkey (default: F5), records audio from the microphone, transcribes it locally using Whisper via whisper.cpp, and pastes the result into the focused application. Hotkeys (including modifier combos like Cmd+Shift+R) are configurable via the menu bar interface and persist in `~/Library/Application Support/Whispr/config.json`.
 
 ## Development Commands
 
@@ -24,9 +24,10 @@ pyinstaller whispr.spec   # outputs to dist/Whispr.app
 
 ## Architecture
 
-The app has four modules under `whispr/`:
+The app has five modules under `whispr/`:
 
-- **main.py** — Entry point. `WhisprApp` subclasses `rumps.App` for the menu bar UI. Registers a global hotkey listener (`pynput`) in a background thread. Toggles recording on F5, Esc/Enter stops recording. Whisper model loads in a background thread on startup (shows "Loading..." in menu bar). Transcription runs in a separate thread to keep the UI responsive.
+- **main.py** — Entry point. `WhisprApp` subclasses `rumps.App` for the menu bar UI. Registers a global hotkey listener (`pynput`) with press/release tracking for modifier combos. Toggle and stop keys are loaded from config. Menu bar includes key binding preferences with a capture mode (click to set, then press desired key combo). Whisper model loads in a background thread on startup (shows "Loading..." in menu bar). Quartz event tap suppresses stop keys during recording.
+- **config.py** — Configuration management. Loads/saves hotkey bindings from `~/Library/Application Support/Whispr/config.json`. Maps between config key names, display names, pynput keys, and Quartz keycodes. Supports single keys and modifier combos (e.g., `cmd+shift+r`). Validates config on load with fallback to defaults (F5 toggle, Escape/Return stop).
 - **recorder.py** — `Recorder` class wraps `sounddevice.InputStream` to capture 16kHz mono float32 audio. Thread-safe start/stop with lock.
 - **transcriber.py** — Loads a whisper.cpp model via `pywhispercpp` (singleton pattern). `transcribe()` takes a numpy audio array and returns text. Model downloads automatically on first use (~466MB for "small").
 - **typer.py** — Outputs text by copying to clipboard (`pbcopy`), simulating Cmd+V via AppleScript (`osascript`), then restoring the previous clipboard contents.
