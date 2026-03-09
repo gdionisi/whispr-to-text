@@ -2,6 +2,7 @@
 
 import threading
 import rumps
+import Quartz
 from AppKit import NSApplication, NSApplicationActivationPolicyAccessory
 from pynput import keyboard
 
@@ -13,11 +14,17 @@ ICON_IDLE = "🎤"
 ICON_RECORDING = "🔴"
 ICON_PROCESSING = "⏳"
 
+# macOS keycodes for Escape and Return
+_KC_ESCAPE = 53
+_KC_RETURN = 36
+
 
 class WhisprApp(rumps.App):
     def __init__(self):
         super().__init__("Whispr", title=ICON_IDLE)
         self.recorder = Recorder()
+        self._tap = None
+        self._tap_source = None
         self.menu = [
             rumps.MenuItem("Toggle Recording (Fn+F5)", callback=self._on_menu_toggle),
             None,  # separator
@@ -32,7 +39,7 @@ class WhisprApp(rumps.App):
         load_model()
         print("Model loaded. Starting menu bar app...")
 
-        # Start global hotkey listener in background
+        # Global hotkey listener (non-suppressing)
         listener = keyboard.Listener(on_press=self._on_press)
         listener.daemon = True
         listener.start()
@@ -42,8 +49,51 @@ class WhisprApp(rumps.App):
     def _on_press(self, key):
         if key == keyboard.Key.f5:
             self._toggle()
-        elif key in (keyboard.Key.esc, keyboard.Key.enter) and self.recorder.is_recording:
-            self._toggle()
+
+    def _suppress_tap_callback(self, proxy, event_type, event, refcon):
+        """Quartz event tap: suppress Esc/Enter and trigger stop recording."""
+        keycode = Quartz.CGEventGetIntegerValueField(
+            event, Quartz.kCGKeyboardEventKeycode
+        )
+        if keycode in (_KC_ESCAPE, _KC_RETURN):
+            threading.Thread(target=self._toggle, daemon=True).start()
+            return None  # suppress this key
+        return event
+
+    def _start_suppress_tap(self):
+        """Install a Quartz event tap to suppress Esc/Enter."""
+        self._tap = Quartz.CGEventTapCreate(
+            Quartz.kCGSessionEventTap,
+            Quartz.kCGHeadInsertEventTap,
+            Quartz.kCGEventTapOptionDefault,
+            Quartz.CGEventMaskBit(Quartz.kCGEventKeyDown),
+            self._suppress_tap_callback,
+            None,
+        )
+        if self._tap:
+            self._tap_source = Quartz.CFMachPortCreateRunLoopSource(
+                None, self._tap, 0
+            )
+            Quartz.CFRunLoopAddSource(
+                Quartz.CFRunLoopGetMain(),
+                self._tap_source,
+                Quartz.kCFRunLoopCommonModes,
+            )
+
+    def _stop_suppress_tap(self):
+        """Fully disable and remove the Quartz event tap."""
+        if self._tap:
+            Quartz.CGEventTapEnable(self._tap, False)
+        if self._tap_source:
+            Quartz.CFRunLoopRemoveSource(
+                Quartz.CFRunLoopGetMain(),
+                self._tap_source,
+                Quartz.kCFRunLoopCommonModes,
+            )
+            self._tap_source = None
+        if self._tap:
+            Quartz.CFMachPortInvalidate(self._tap)
+            self._tap = None
 
     def _on_menu_toggle(self, _):
         self._toggle()
@@ -53,6 +103,7 @@ class WhisprApp(rumps.App):
 
     def _toggle(self):
         if self.recorder.is_recording:
+            self._stop_suppress_tap()
             audio = self.recorder.stop()
             self.title = ICON_PROCESSING
             self._status_item.title = "Status: Transcribing..."
@@ -77,6 +128,7 @@ class WhisprApp(rumps.App):
             threading.Thread(target=process, daemon=True).start()
         else:
             self.recorder.start()
+            self._start_suppress_tap()
             self.title = ICON_RECORDING
             self._status_item.title = "Status: Recording..."
 
