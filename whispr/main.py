@@ -1,65 +1,83 @@
-"""Whispr — local dictation tool with global hotkey."""
+"""Whispr — local dictation tool with menu bar icon and global hotkey."""
 
 import threading
+import rumps
 from pynput import keyboard
 
 from whispr.recorder import Recorder, SAMPLE_RATE
 from whispr.transcriber import transcribe, load_model
 from whispr.typer import type_text
 
-recorder = Recorder()
+ICON_IDLE = "🎤"
+ICON_RECORDING = "🔴"
+ICON_PROCESSING = "⏳"
 
 
-def on_toggle():
-    """Toggle recording on/off."""
-    if recorder.is_recording:
-        audio = recorder.stop()
-        if len(audio) < SAMPLE_RATE * 0.5:
-            print("Recording too short, skipping.")
-            return
+class WhisprApp(rumps.App):
+    def __init__(self):
+        super().__init__("Whispr", title=ICON_IDLE)
+        self.recorder = Recorder()
+        self.menu = [
+            rumps.MenuItem("Toggle Recording (Fn+F5)", callback=self._on_menu_toggle),
+            None,  # separator
+            rumps.MenuItem("Status: Idle"),
+        ]
+        self._status_item = self.menu["Status: Idle"]
 
-        def process():
-            print("Transcribing...")
-            text = transcribe(audio, sample_rate=SAMPLE_RATE)
-            if text:
-                print(f"Transcribed: {text}")
-                type_text(text)
-            else:
-                print("No speech detected.")
+    def start(self):
+        print("Loading Whisper model...")
+        load_model()
+        print("Model loaded. Starting menu bar app...")
 
-        threading.Thread(target=process, daemon=True).start()
-    else:
-        recorder.start()
+        # Start global hotkey listener in background
+        listener = keyboard.Listener(on_press=self._on_press)
+        listener.daemon = True
+        listener.start()
 
+        self.run()
 
-def on_press(key):
-    if key == keyboard.Key.f5:
-        on_toggle()
-    elif key in (keyboard.Key.esc, keyboard.Key.enter) and recorder.is_recording:
-        on_toggle()
+    def _on_press(self, key):
+        if key == keyboard.Key.f5:
+            self._toggle()
+        elif key in (keyboard.Key.esc, keyboard.Key.enter) and self.recorder.is_recording:
+            self._toggle()
+
+    def _on_menu_toggle(self, _):
+        self._toggle()
+
+    def _toggle(self):
+        if self.recorder.is_recording:
+            audio = self.recorder.stop()
+            self.title = ICON_PROCESSING
+            self._status_item.title = "Status: Transcribing..."
+
+            if len(audio) < SAMPLE_RATE * 0.5:
+                print("Recording too short, skipping.")
+                self.title = ICON_IDLE
+                self._status_item.title = "Status: Idle"
+                return
+
+            def process():
+                print("Transcribing...")
+                text = transcribe(audio, sample_rate=SAMPLE_RATE)
+                if text:
+                    print(f"Transcribed: {text}")
+                    type_text(text)
+                else:
+                    print("No speech detected.")
+                self.title = ICON_IDLE
+                self._status_item.title = "Status: Idle"
+
+            threading.Thread(target=process, daemon=True).start()
+        else:
+            self.recorder.start()
+            self.title = ICON_RECORDING
+            self._status_item.title = "Status: Recording..."
 
 
 def main():
-    print("=" * 50)
-    print("  Whispr — Local Dictation Tool")
-    print("=" * 50)
-    print()
-    print("Loading model on startup...")
-    load_model()
-    print()
-    print("Hotkey: Fn+F5 (toggle recording)")
-    print("Press Ctrl+C to quit.")
-    print()
-    print("Note: Grant Accessibility permissions in")
-    print("  System Settings > Privacy & Security > Accessibility")
-    print("  for your terminal app.")
-    print()
-
-    with keyboard.Listener(on_press=on_press) as listener:
-        try:
-            listener.join()
-        except KeyboardInterrupt:
-            print("\nBye!")
+    app = WhisprApp()
+    app.start()
 
 
 if __name__ == "__main__":

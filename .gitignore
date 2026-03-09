@@ -5,3 +5,4 @@ dist/
 *.egg-info/
 models/
 .DS_Store
+*.log
