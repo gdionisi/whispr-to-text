@@ -11,13 +11,15 @@ from pynput import keyboard
 from whispr.recorder import Recorder, SAMPLE_RATE
 from whispr.transcriber import transcribe, load_model
 from whispr.typer import type_text
+from whispr.config import (
+    load_config, save_config, display_name,
+    pynput_key, pynput_mods, quartz_keycode, quartz_mod_mask,
+    key_name_from_pynput, is_modifier, modifier_name,
+    format_hotkey, parse_hotkey, QUARTZ_MOD_FLAGS,
+)
 
 _BASE = getattr(sys, "_MEIPASS", os.path.dirname(os.path.dirname(__file__)))
 _ICON_PATH = os.path.join(_BASE, "icon_menubar.png")
-
-# macOS keycodes for Escape and Return
-_KC_ESCAPE = 53
-_KC_RETURN = 36
 
 
 class WhisprApp(rumps.App):
@@ -26,16 +28,43 @@ class WhisprApp(rumps.App):
         self.recorder = Recorder()
         self._tap = None
         self._tap_source = None
+        self._capture_target = None  # "toggle" or "stop" when capturing a key
+        self._held_mods: set[str] = set()  # currently held modifier names
+
+        # Load user config
+        self._config = load_config()
+
         self.menu = [
-            rumps.MenuItem("Toggle Recording (Fn+F5)", callback=self._on_menu_toggle),
+            rumps.MenuItem("Toggle Recording", callback=self._on_menu_toggle),
             None,  # separator
             rumps.MenuItem("Status: Idle"),
+            None,  # separator
+            rumps.MenuItem("Set Toggle Key", callback=self._on_set_toggle_key),
+            rumps.MenuItem("Set Stop Key", callback=self._on_set_stop_key),
+            rumps.MenuItem("Reset Key Bindings", callback=self._on_reset_keys),
         ]
         self._status_item = self.menu["Status: Idle"]
+        self._update_menu_labels()
+
+    def _update_menu_labels(self):
+        """Update menu item titles to reflect current key config."""
+        toggle = display_name(self._config["toggle_key"])
+        self.menu["Toggle Recording"].title = f"Toggle Recording ({toggle})"
+
+        stop_names = ", ".join(
+            display_name(k) for k in self._config["stop_keys"]
+        )
+        self.menu["Set Toggle Key"].title = f"Toggle Key: {toggle} (click to change)"
+        self.menu["Set Stop Key"].title = (
+            f"Stop Key: {stop_names or 'None'} (click to change)"
+        )
 
     def start(self):
-        # Global hotkey listener (non-suppressing)
-        listener = keyboard.Listener(on_press=self._on_press)
+        # Global hotkey listener (non-suppressing) with press and release
+        listener = keyboard.Listener(
+            on_press=self._on_press,
+            on_release=self._on_release,
+        )
         listener.daemon = True
         listener.start()
 
@@ -53,27 +82,129 @@ class WhisprApp(rumps.App):
         self._model_ready = True
         self.title = None
 
+    # ── Key capture mode ──────────────────────────────────────────────
+
+    def _on_set_toggle_key(self, _):
+        """Enter capture mode for the toggle key."""
+        if self.recorder.is_recording:
+            return
+        self._capture_target = "toggle"
+        self.title = "⌨️"
+        self._status_item.title = "Press a key combo for Toggle..."
+
+    def _on_set_stop_key(self, _):
+        """Enter capture mode for the stop key."""
+        if self.recorder.is_recording:
+            return
+        self._capture_target = "stop"
+        self.title = "⌨️"
+        self._status_item.title = "Press a key combo for Stop..."
+
+    def _on_reset_keys(self, _):
+        """Reset key bindings to defaults."""
+        from whispr.config import DEFAULT_CONFIG
+        self._config["toggle_key"] = DEFAULT_CONFIG["toggle_key"]
+        self._config["stop_keys"] = list(DEFAULT_CONFIG["stop_keys"])
+        save_config(self._config)
+        self._update_menu_labels()
+        self._status_item.title = "Status: Keys reset to defaults"
+
+    def _handle_capture(self, key):
+        """Handle a keypress during capture mode. Returns True if handled."""
+        if self._capture_target is None:
+            return False
+
+        # Ignore modifier-only presses — wait for the actual key
+        if is_modifier(key):
+            return True
+
+        name = key_name_from_pynput(key)
+        if name is None:
+            return True
+
+        # Build hotkey string from held modifiers + key
+        hotkey = format_hotkey(frozenset(self._held_mods), name)
+
+        if self._capture_target == "toggle":
+            self._config["toggle_key"] = hotkey
+        elif self._capture_target == "stop":
+            self._config["stop_keys"] = [hotkey]
+
+        save_config(self._config)
+        self._capture_target = None
+        self.title = None
+        self._update_menu_labels()
+        self._status_item.title = "Status: Idle"
+        return True
+
+    # ── Hotkey handling ───────────────────────────────────────────────
+
     def _on_press(self, key):
-        if key == keyboard.Key.f5:
+        # Track modifier state
+        mod = modifier_name(key)
+        if mod:
+            self._held_mods.add(mod)
+
+        # Capture mode takes priority
+        if self._handle_capture(key):
+            return
+
+        # Check for toggle key (match base key + modifiers)
+        toggle_str = self._config["toggle_key"]
+        toggle_key = pynput_key(toggle_str)
+        toggle_mods = pynput_mods(toggle_str)
+        if key == toggle_key and self._held_mods == set(toggle_mods):
             self._toggle()
 
+    def _on_release(self, key):
+        # Untrack modifier state
+        mod = modifier_name(key)
+        if mod:
+            self._held_mods.discard(mod)
+
     def _suppress_tap_callback(self, proxy, event_type, event, refcon):
-        """Quartz event tap: suppress Esc/Enter and trigger stop recording."""
-        keycode = Quartz.CGEventGetIntegerValueField(
+        """Quartz event tap: suppress stop key combos and trigger stop."""
+        kc = Quartz.CGEventGetIntegerValueField(
             event, Quartz.kCGKeyboardEventKeycode
         )
-        if keycode in (_KC_ESCAPE, _KC_RETURN):
+        flags = Quartz.CGEventGetFlags(event)
+
+        for stop_hotkey in self._config["stop_keys"]:
+            expected_kc = quartz_keycode(stop_hotkey)
+            expected_mod_mask = quartz_mod_mask(stop_hotkey)
+
+            if kc != expected_kc:
+                continue
+
+            # Check that all required modifiers are held
+            # (use device-independent flags only)
+            if expected_mod_mask:
+                if (flags & expected_mod_mask) != expected_mod_mask:
+                    continue
+
+            # For combos without modifiers, make sure no modifiers are held
+            if not expected_mod_mask:
+                held_mods = 0
+                for flag in QUARTZ_MOD_FLAGS.values():
+                    held_mods |= flags & flag
+                if held_mods:
+                    continue
+
             threading.Thread(target=self._toggle, daemon=True).start()
             return None  # suppress this key
+
         return event
 
     def _start_suppress_tap(self):
-        """Install a Quartz event tap to suppress Esc/Enter."""
+        """Install a Quartz event tap to suppress stop keys."""
+        mask = Quartz.CGEventMaskBit(Quartz.kCGEventKeyDown)
+        # Also capture flagsChanged events for modifier-based combos
+        mask |= Quartz.CGEventMaskBit(Quartz.kCGEventFlagsChanged)
         self._tap = Quartz.CGEventTapCreate(
             Quartz.kCGSessionEventTap,
             Quartz.kCGHeadInsertEventTap,
             Quartz.kCGEventTapOptionDefault,
-            Quartz.CGEventMaskBit(Quartz.kCGEventKeyDown),
+            mask,
             self._suppress_tap_callback,
             None,
         )
