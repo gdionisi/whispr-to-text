@@ -11,6 +11,7 @@ CONFIG_FILE = os.path.join(CONFIG_DIR, "config.json")
 DEFAULT_CONFIG = {
     "toggle_key": "f5",
     "stop_keys": ["escape", "return"],
+    "welcome_shown": False,
 }
 
 # Modifier names recognized in hotkey combos
@@ -117,6 +118,8 @@ def load_config() -> dict:
         stop = saved.get("stop_keys")
         if isinstance(stop, list) and all(_is_valid_hotkey(k) for k in stop):
             config["stop_keys"] = stop
+        if saved.get("welcome_shown"):
+            config["welcome_shown"] = True
     except (FileNotFoundError, json.JSONDecodeError):
         pass
     return config
