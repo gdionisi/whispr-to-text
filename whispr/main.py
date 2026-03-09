@@ -1,5 +1,7 @@
 """Whispr — local dictation tool with menu bar icon and global hotkey."""
 
+import os
+import sys
 import threading
 import rumps
 import Quartz
@@ -10,9 +12,8 @@ from whispr.recorder import Recorder, SAMPLE_RATE
 from whispr.transcriber import transcribe, load_model
 from whispr.typer import type_text
 
-ICON_IDLE = "🎤"
-ICON_RECORDING = "🔴"
-ICON_PROCESSING = "⏳"
+_BASE = getattr(sys, "_MEIPASS", os.path.dirname(os.path.dirname(__file__)))
+_ICON_PATH = os.path.join(_BASE, "icon_menubar.png")
 
 # macOS keycodes for Escape and Return
 _KC_ESCAPE = 53
@@ -21,7 +22,7 @@ _KC_RETURN = 36
 
 class WhisprApp(rumps.App):
     def __init__(self):
-        super().__init__("Whispr", title=ICON_IDLE)
+        super().__init__("Whispr", icon=_ICON_PATH, template=True)
         self.recorder = Recorder()
         self._tap = None
         self._tap_source = None
@@ -105,12 +106,12 @@ class WhisprApp(rumps.App):
         if self.recorder.is_recording:
             self._stop_suppress_tap()
             audio = self.recorder.stop()
-            self.title = ICON_PROCESSING
+            self.title = "⏳"
             self._status_item.title = "Status: Transcribing..."
 
             if len(audio) < SAMPLE_RATE * 0.5:
                 print("Recording too short, skipping.")
-                self.title = ICON_IDLE
+                self.title = None
                 self._status_item.title = "Status: Idle"
                 return
 
@@ -122,14 +123,14 @@ class WhisprApp(rumps.App):
                     type_text(text)
                 else:
                     print("No speech detected.")
-                self.title = ICON_IDLE
+                self.title = None
                 self._status_item.title = "Status: Idle"
 
             threading.Thread(target=process, daemon=True).start()
         else:
             self.recorder.start()
             self._start_suppress_tap()
-            self.title = ICON_RECORDING
+            self.title = "🔴"
             self._status_item.title = "Status: Recording..."
 
 

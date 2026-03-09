@@ -4,7 +4,7 @@ a = Analysis(
     ["whispr/main.py"],
     pathex=[],
     binaries=[],
-    datas=[],
+    datas=[("icon_menubar.png", ".")],
     hiddenimports=[
         "whispr.recorder",
         "whispr.transcriber",
@@ -48,6 +48,7 @@ coll = COLLECT(
 app = BUNDLE(
     coll,
     name="Whispr.app",
+    icon="icon.icns",
     bundle_identifier="com.whispr.app",
     info_plist={
         "CFBundleName": "Whispr",
