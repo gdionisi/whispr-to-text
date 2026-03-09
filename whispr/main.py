@@ -7,11 +7,7 @@ from whispr.recorder import Recorder, SAMPLE_RATE
 from whispr.transcriber import transcribe, load_model
 from whispr.typer import type_text
 
-# Hotkey: Option + W
-HOTKEY = {keyboard.Key.alt, keyboard.KeyCode.from_char("w")}
-
 recorder = Recorder()
-current_keys: set = set()
 
 
 def on_toggle():
@@ -37,13 +33,10 @@ def on_toggle():
 
 
 def on_press(key):
-    current_keys.add(key)
-    if HOTKEY.issubset(current_keys):
+    if key == keyboard.Key.f5:
         on_toggle()
-
-
-def on_release(key):
-    current_keys.discard(key)
+    elif key in (keyboard.Key.esc, keyboard.Key.enter) and recorder.is_recording:
+        on_toggle()
 
 
 def main():
@@ -54,7 +47,7 @@ def main():
     print("Loading model on startup...")
     load_model()
     print()
-    print("Hotkey: Option + W (toggle recording)")
+    print("Hotkey: Fn+F5 (toggle recording)")
     print("Press Ctrl+C to quit.")
     print()
     print("Note: Grant Accessibility permissions in")
@@ -62,7 +55,7 @@ def main():
     print("  for your terminal app.")
     print()
 
-    with keyboard.Listener(on_press=on_press, on_release=on_release) as listener:
+    with keyboard.Listener(on_press=on_press) as listener:
         try:
             listener.join()
         except KeyboardInterrupt:
