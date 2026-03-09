@@ -71,29 +71,33 @@ class WhisprApp(rumps.App):
         listener.daemon = True
         listener.start()
 
+        # Show welcome dialog on first launch (before model download)
+        if not self._config.get("welcome_shown"):
+            if not self._show_welcome():
+                # User cancelled — quit before downloading anything
+                return
+
         # Load model in background so the menu bar appears immediately
         self._model_ready = False
         self.title = "Loading..."
         threading.Thread(target=self._load_model, daemon=True).start()
 
-        # Show welcome dialog on first launch
-        # if not self._config.get("welcome_shown"):
-        self._show_welcome()
-
         self.run()
 
-    def _show_welcome(self):
-        """Show a one-time welcome dialog with setup instructions."""
-        self._show_help_dialog(first_launch=True)
-        self._config["welcome_shown"] = True
-        save_config(self._config)
+    def _show_welcome(self) -> bool:
+        """Show a one-time welcome dialog. Returns True to proceed, False to quit."""
+        accepted = self._show_help_dialog(first_launch=True)
+        if accepted:
+            self._config["welcome_shown"] = True
+            save_config(self._config)
+        return accepted
 
     def _on_help(self, _):
         """Show the help/instructions dialog."""
         self._show_help_dialog(first_launch=False)
 
-    def _show_help_dialog(self, first_launch: bool):
-        """Show the instructions dialog."""
+    def _show_help_dialog(self, first_launch: bool) -> bool:
+        """Show the instructions dialog. Returns True if user accepted."""
         toggle = display_name(self._config["toggle_key"])
         stop_names = ", ".join(
             display_name(k) for k in self._config["stop_keys"]
@@ -105,18 +109,18 @@ class WhisprApp(rumps.App):
         )
         if first_launch:
             sections.append(
-                "FIRST LAUNCH\n"
-                "The Whisper speech model (~466 MB) is downloading in the "
-                "background. The menu bar will show \"Loading...\" until it's "
-                "ready. This only happens once."
+                "MODEL DOWNLOAD\n"
+                "Whispr needs a speech recognition model (~466 MB) to work. "
+                "It will be downloaded automatically when you click "
+                "\"Continue\". This only happens once — subsequent launches "
+                "are instant."
             )
         sections.append(
             "PERMISSIONS REQUIRED\n"
             "Go to System Settings → Privacy & Security and grant:\n"
             "• Accessibility — for global hotkeys and pasting text\n"
             "• Microphone — for recording audio\n"
-            "If running from a terminal, grant permissions to the "
-            "terminal app (e.g., iTerm, Terminal)."
+            "• Input monitoring — to detect when hotkeys are pressed"
         )
         sections.append(
             f"HOW TO USE\n"
@@ -129,13 +133,23 @@ class WhisprApp(rumps.App):
             "Click the menu bar icon to change toggle/stop keys. "
             "Modifier combos (e.g., Cmd+Shift+R) are supported."
         )
-        title = "Welcome to Whispr" if first_launch else "Whispr — Help"
-        rumps.alert(
+        if first_launch:
+            title = "Welcome to Whispr"
+            ok_text = "Continue"
+            cancel = "Quit"
+        else:
+            title = "Whispr — Help"
+            ok_text = "OK"
+            cancel = None
+        response = rumps.alert(
             title=title,
             message="\n\n".join(sections),
-            ok="Got it",
+            ok=ok_text,
+            cancel=cancel,
             icon_path=_APP_ICON_PATH,
         )
+        # rumps.alert returns 1 for OK, 0 for Cancel
+        return response == 1
 
     def _load_model(self):
         print("Loading Whisper model...")
