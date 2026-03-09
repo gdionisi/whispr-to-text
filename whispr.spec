@@ -4,7 +4,7 @@ a = Analysis(
     ["whispr/main.py"],
     pathex=[],
     binaries=[],
-    datas=[("icon_menubar.png", ".")],
+    datas=[("icon_menubar.png", "."), ("icon.png", ".")],
     hiddenimports=[
         "whispr.recorder",
         "whispr.transcriber",

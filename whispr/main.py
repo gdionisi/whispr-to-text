@@ -20,7 +20,8 @@ from whispr.config import (
 
 _BASE = getattr(sys, "_MEIPASS", os.path.dirname(os.path.dirname(__file__)))
 _ICON_PATH = os.path.join(_BASE, "icon_menubar.png")
-_APP_ICON_PATH = os.path.join(_BASE, "icon.png")
+_app_icon = os.path.join(_BASE, "icon.png")
+_APP_ICON_PATH = _app_icon if os.path.exists(_app_icon) else None
 
 
 class WhisprApp(rumps.App):
