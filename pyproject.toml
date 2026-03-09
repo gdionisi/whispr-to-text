@@ -1,0 +1,14 @@
+[project]
+name = "whispr"
+version = "0.1.0"
+description = "Local speech-to-text dictation tool using Whisper"
+requires-python = ">=3.11"
+dependencies = [
+    "pywhispercpp>=1.2.0",
+    "sounddevice>=0.4.6",
+    "numpy>=1.24.0",
+    "pynput>=1.7.6",
+]
+
+[project.scripts]
+whispr = "whispr.main:main"
