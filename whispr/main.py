@@ -2,6 +2,7 @@
 
 import threading
 import rumps
+from AppKit import NSApplication, NSApplicationActivationPolicyAccessory
 from pynput import keyboard
 
 from whispr.recorder import Recorder, SAMPLE_RATE
@@ -21,6 +22,8 @@ class WhisprApp(rumps.App):
             rumps.MenuItem("Toggle Recording (Fn+F5)", callback=self._on_menu_toggle),
             None,  # separator
             rumps.MenuItem("Status: Idle"),
+            None,  # separator
+            rumps.MenuItem("Quit Whispr", callback=self._on_quit),
         ]
         self._status_item = self.menu["Status: Idle"]
 
@@ -44,6 +47,9 @@ class WhisprApp(rumps.App):
 
     def _on_menu_toggle(self, _):
         self._toggle()
+
+    def _on_quit(self, _):
+        rumps.quit_application()
 
     def _toggle(self):
         if self.recorder.is_recording:
@@ -76,6 +82,10 @@ class WhisprApp(rumps.App):
 
 
 def main():
+    # Hide Python from Dock — run as menu bar-only app
+    NSApplication.sharedApplication().setActivationPolicy_(
+        NSApplicationActivationPolicyAccessory
+    )
     app = WhisprApp()
     app.start()
 
