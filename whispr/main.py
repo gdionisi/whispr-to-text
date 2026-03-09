@@ -30,22 +30,28 @@ class WhisprApp(rumps.App):
             rumps.MenuItem("Toggle Recording (Fn+F5)", callback=self._on_menu_toggle),
             None,  # separator
             rumps.MenuItem("Status: Idle"),
-            None,  # separator
-            rumps.MenuItem("Quit Whispr", callback=self._on_quit),
         ]
         self._status_item = self.menu["Status: Idle"]
 
     def start(self):
-        print("Loading Whisper model...")
-        load_model()
-        print("Model loaded. Starting menu bar app...")
-
         # Global hotkey listener (non-suppressing)
         listener = keyboard.Listener(on_press=self._on_press)
         listener.daemon = True
         listener.start()
 
+        # Load model in background so the menu bar appears immediately
+        self._model_ready = False
+        self.title = "Loading..."
+        threading.Thread(target=self._load_model, daemon=True).start()
+
         self.run()
+
+    def _load_model(self):
+        print("Loading Whisper model...")
+        load_model()
+        print("Model loaded.")
+        self._model_ready = True
+        self.title = None
 
     def _on_press(self, key):
         if key == keyboard.Key.f5:
@@ -103,6 +109,8 @@ class WhisprApp(rumps.App):
         rumps.quit_application()
 
     def _toggle(self):
+        if not self._model_ready:
+            return
         if self.recorder.is_recording:
             self._stop_suppress_tap()
             audio = self.recorder.stop()
