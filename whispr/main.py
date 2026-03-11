@@ -15,7 +15,7 @@ from whispr.config import (
     load_config, save_config, display_name,
     pynput_key, pynput_mods, quartz_keycode, quartz_mod_mask,
     key_name_from_pynput, is_modifier, modifier_name,
-    format_hotkey, parse_hotkey, QUARTZ_MOD_FLAGS,
+    format_hotkey, parse_hotkey, QUARTZ_MOD_FLAGS, LANGUAGES,
 )
 
 _BASE = getattr(sys, "_MEIPASS", os.path.dirname(os.path.dirname(__file__)))
@@ -36,10 +36,23 @@ class WhisprApp(rumps.App):
         # Load user config
         self._config = load_config()
 
+        # Build language submenu
+        self._lang_menu = rumps.MenuItem("Language")
+        self._lang_items = {}
+        for code, name in LANGUAGES.items():
+            item = rumps.MenuItem(name, callback=self._on_language_select)
+            item._lang_code = code
+            if code == self._config["language"]:
+                item.state = 1
+            self._lang_items[code] = item
+            self._lang_menu.add(item)
+
         self.menu = [
             rumps.MenuItem("Toggle Recording", callback=self._on_menu_toggle),
             None,  # separator
             rumps.MenuItem("Status: Idle"),
+            None,  # separator
+            self._lang_menu,
             None,  # separator
             rumps.MenuItem("Set Toggle Key", callback=self._on_set_toggle_key),
             rumps.MenuItem("Set Stop Key", callback=self._on_set_stop_key),
@@ -176,6 +189,15 @@ class WhisprApp(rumps.App):
         self._capture_target = "stop"
         self.title = "⌨️"
         self._status_item.title = "Press a key combo for Stop..."
+
+    def _on_language_select(self, sender):
+        """Handle language selection from submenu."""
+        code = sender._lang_code
+        self._config["language"] = code
+        save_config(self._config)
+        # Update checkmarks
+        for c, item in self._lang_items.items():
+            item.state = 1 if c == code else 0
 
     def _on_reset_keys(self, _):
         """Reset key bindings to defaults."""
@@ -332,13 +354,18 @@ class WhisprApp(rumps.App):
                 return
 
             def process():
-                print("Transcribing...")
-                text = transcribe(audio, sample_rate=SAMPLE_RATE)
-                if text:
-                    print(f"Transcribed: {text}")
-                    type_text(text)
-                else:
-                    print("No speech detected.")
+                try:
+                    print("Transcribing...")
+                    text = transcribe(audio, sample_rate=SAMPLE_RATE, language=self._config["language"])
+                    if text:
+                        print(f"Transcribed: {text}")
+                        type_text(text)
+                    else:
+                        print("No speech detected.")
+                except Exception as e:
+                    print(f"Error during transcription: {e}")
+                    import traceback
+                    traceback.print_exc()
                 self.title = None
                 self._status_item.title = "Status: Idle"
 

@@ -15,7 +15,7 @@ def load_model(model_size: str = "small") -> Model:
     return _model
 
 
-def transcribe(audio_data, sample_rate: int = 16000) -> str:
+def transcribe(audio_data, sample_rate: int = 16000, language: str = "en") -> str:
     """Transcribe audio numpy array to text."""
     import numpy as np
 
@@ -34,6 +34,6 @@ def transcribe(audio_data, sample_rate: int = 16000) -> str:
         indices = np.linspace(0, len(audio) - 1, n_samples)
         audio = np.interp(indices, np.arange(len(audio)), audio)
 
-    segments = model.transcribe(audio, language="en")
+    segments = model.transcribe(audio, language=language)
     text = " ".join(seg.text for seg in segments).strip()
     return text

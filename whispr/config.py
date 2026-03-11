@@ -11,7 +11,41 @@ CONFIG_FILE = os.path.join(CONFIG_DIR, "config.json")
 DEFAULT_CONFIG = {
     "toggle_key": "f5",
     "stop_keys": ["escape", "return"],
+    "language": "en",
     "welcome_shown": False,
+}
+
+# Whisper supported languages: code -> display name
+LANGUAGES = {
+    "en": "English",
+    "fr": "French",
+    "de": "German",
+    "es": "Spanish",
+    "it": "Italian",
+    "pt": "Portuguese",
+    "nl": "Dutch",
+    "pl": "Polish",
+    "ru": "Russian",
+    "uk": "Ukrainian",
+    "ja": "Japanese",
+    "zh": "Chinese",
+    "ko": "Korean",
+    "ar": "Arabic",
+    "hi": "Hindi",
+    "tr": "Turkish",
+    "sv": "Swedish",
+    "da": "Danish",
+    "no": "Norwegian",
+    "fi": "Finnish",
+    "cs": "Czech",
+    "ro": "Romanian",
+    "el": "Greek",
+    "he": "Hebrew",
+    "hu": "Hungarian",
+    "ca": "Catalan",
+    "th": "Thai",
+    "vi": "Vietnamese",
+    "id": "Indonesian",
 }
 
 # Modifier names recognized in hotkey combos
@@ -118,6 +152,9 @@ def load_config() -> dict:
         stop = saved.get("stop_keys")
         if isinstance(stop, list) and all(_is_valid_hotkey(k) for k in stop):
             config["stop_keys"] = stop
+        lang = saved.get("language", "")
+        if lang in LANGUAGES:
+            config["language"] = lang
         if saved.get("welcome_shown"):
             config["welcome_shown"] = True
     except (FileNotFoundError, json.JSONDecodeError):
