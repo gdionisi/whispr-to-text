@@ -1,6 +1,11 @@
 """Type text into the currently focused application via clipboard paste."""
 
+import os
 import subprocess
+
+# When launched from an .app bundle, LANG may not be set, causing pbcopy/pbpaste
+# to interpret UTF-8 bytes as Mac Roman. Force a UTF-8 locale for subprocesses.
+_ENV = {**os.environ, "LANG": "en_US.UTF-8"}
 
 
 def type_text(text: str):
@@ -11,12 +16,14 @@ def type_text(text: str):
     try:
         # Save current clipboard
         old_clip = subprocess.run(
-            ["pbpaste"], capture_output=True, text=True, timeout=2
+            ["pbpaste"], capture_output=True, encoding="utf-8", timeout=2,
+            env=_ENV,
         ).stdout
 
         # Copy transcribed text to clipboard
         subprocess.run(
-            ["pbcopy"], input=text, text=True, timeout=2
+            ["pbcopy"], input=text, encoding="utf-8", timeout=2,
+            env=_ENV,
         )
 
         # Cmd+V to paste into focused app
@@ -34,7 +41,8 @@ def type_text(text: str):
 
         # Restore previous clipboard after a short delay
         subprocess.run(
-            ["pbcopy"], input=old_clip, text=True, timeout=2
+            ["pbcopy"], input=old_clip, encoding="utf-8", timeout=2,
+            env=_ENV,
         )
 
     except subprocess.TimeoutExpired:

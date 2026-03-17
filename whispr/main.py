@@ -19,7 +19,8 @@ from whispr.config import (
 )
 
 _BASE = getattr(sys, "_MEIPASS", os.path.dirname(os.path.dirname(__file__)))
-_ICON_PATH = os.path.join(_BASE, "icon_menubar.png")
+_icon = os.path.join(_BASE, "icon_menubar.png")
+_ICON_PATH = _icon if os.path.exists(_icon) else None
 _app_icon = os.path.join(_BASE, "icon.png")
 _APP_ICON_PATH = _app_icon if os.path.exists(_app_icon) else None
 
@@ -263,6 +264,12 @@ class WhisprApp(rumps.App):
 
     def _suppress_tap_callback(self, proxy, event_type, event, refcon):
         """Quartz event tap: suppress stop key combos and trigger stop."""
+        # macOS disables taps that are too slow to respond — re-enable
+        if event_type == Quartz.kCGEventTapDisabledByTimeout:
+            print("Event tap disabled by timeout, re-enabling...")
+            Quartz.CGEventTapEnable(self._tap, True)
+            return event
+
         kc = Quartz.CGEventGetIntegerValueField(
             event, Quartz.kCGKeyboardEventKeycode
         )
